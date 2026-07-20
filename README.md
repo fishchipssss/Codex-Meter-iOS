@@ -46,8 +46,11 @@ earlier supported releases receive a native material fallback.
 
 ### TestFlight
 
-Install an available beta through the TestFlight invitation supplied by the
-project maintainer. TestFlight builds expire after 90 days.
+Install the current public beta through TestFlight:
+
+[**Join the Codex Meter TestFlight beta**](https://testflight.apple.com/join/49HSCXuv)
+
+TestFlight builds expire after 90 days.
 
 ### Build from source with xtool
 
@@ -221,8 +224,10 @@ instead of opening a public issue.
 
 ## Credits
 
-- Inspired by the MIT-licensed [Codex Meter](https://github.com/BenItBuhner/Codex-Meter)
-  project by BenItBuhner and contributors.
+- The app's original feature set and usage-monitor concept were inspired by the
+  Android version of the MIT-licensed
+  [Codex Meter](https://github.com/BenItBuhner/Codex-Meter) project by
+  BenItBuhner and contributors.
 - Built with [SwiftUI](https://developer.apple.com/xcode/swiftui/),
   [WidgetKit](https://developer.apple.com/widgets/), and
   [xtool](https://github.com/xtool-org/xtool).

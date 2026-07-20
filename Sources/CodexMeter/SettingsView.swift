@@ -188,7 +188,7 @@ struct SettingsView: View {
         settingsSection("About") {
             LabeledContent("Version", value: "0.1.0")
             settingsDivider
-            Link("Android inspiration", destination: URL(string: "https://github.com/BenItBuhner/Codex-Meter")!)
+            Link("Source code", destination: URL(string: "https://github.com/Anonmike/Codex-Meter-iOS")!)
             settingsDivider
             Text("Codex Meter is an unofficial personal client and is not affiliated with OpenAI.")
                 .font(.footnote)
