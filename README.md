@@ -52,6 +52,14 @@ Install the current public beta through TestFlight:
 
 TestFlight builds expire after 90 days.
 
+### IPA download
+
+The latest IPA is available from
+[GitHub Releases](https://github.com/Anonmike/Codex-Meter-iOS/releases/latest/download/CodexMeter.ipa)
+for use with Feather, AltStore, or another sideloading/signing tool. The release
+IPA is packaged by `xtool` and must be signed with a certificate accepted by the
+target device before installation.
+
 ### Build from source with xtool
 
 Clone the repository, configure the Darwin Swift SDK, and build:
