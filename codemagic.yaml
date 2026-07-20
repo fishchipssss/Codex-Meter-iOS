@@ -1,0 +1,149 @@
+workflows:
+  codex-meter-ipa:
+    name: Codex Meter — IPA artifact
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    environment:
+      xcode: latest
+
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/Homebrew
+        - $HOME/.cache/org.swift.swiftpm
+        - $HOME/Library/Caches/org.swift.swiftpm
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: master
+          include: true
+          source: true
+      cancel_previous_builds: true
+
+    scripts:
+      - name: Install xtool
+        script: |
+          set -euo pipefail
+          brew tap xtool-org/tap
+          brew trust xtool-org/tap || true
+          brew install xtool
+          xtool --version
+
+      - name: Build IPA artifact
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          xtool dev build --ipa
+          test -f xtool/CodexMeter.ipa
+          unzip -t xtool/CodexMeter.ipa
+
+    artifacts:
+      - xtool/CodexMeter.ipa
+
+  codex-meter-testflight:
+    name: Codex Meter — TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    integrations:
+      app_store_connect: mike-appstore
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.picklemike.codexmeter
+      vars:
+        XCODE_WORKSPACE: "xtool/CodexMeter.xcworkspace"
+        XCODE_PROJECT: "xtool/.xtool-tmp/CodexMeter.xcodeproj"
+        XCODE_SCHEME: "CodexMeter-App"
+        MARKETING_VERSION: "1.0.0"
+        BUILD_NUMBER_OFFSET: "1000"
+      xcode: latest
+
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/Homebrew
+        - $HOME/.cache/org.swift.swiftpm
+        - $HOME/Library/Caches/org.swift.swiftpm
+
+    scripts:
+      - name: Install xtool and project tooling
+        script: |
+          set -euo pipefail
+          brew tap xtool-org/tap
+          brew trust xtool-org/tap || true
+          brew install xtool
+          gem install xcodeproj --no-document
+          xtool --version
+
+      - name: Generate the Xcode workspace
+        script: |
+          cd "$CM_BUILD_DIR"
+          # Real Xcode supplies its own platform_version; this override is only
+          # needed by xtool's Linux linker to opt into the iOS 26 design system.
+          sed -i '' 's/linkerSettings: liquidGlassSDKStamp/linkerSettings: []/g' Package.swift
+          xtool dev generate-xcode-project
+          test -d "$XCODE_WORKSPACE"
+          test -d "$XCODE_PROJECT"
+
+      - name: Prepare App Store metadata and icon
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          APP_BUILD_NUMBER=$((PROJECT_BUILD_NUMBER + BUILD_NUMBER_OFFSET))
+          echo "Using App Store build number $APP_BUILD_NUMBER"
+          echo "APP_BUILD_NUMBER=$APP_BUILD_NUMBER" >> "$CM_ENV"
+          ruby Scripts/prepare_codemagic_project.rb \
+            "$XCODE_PROJECT" \
+            "$MARKETING_VERSION" \
+            "$APP_BUILD_NUMBER"
+
+      - name: Apply provisioning profiles
+        script: |
+          cd "$CM_BUILD_DIR"
+          xcode-project use-profiles --project "$XCODE_PROJECT"
+
+      - name: Compile parser tests for iOS
+        script: |
+          cd "$CM_BUILD_DIR"
+          swift build \
+            --build-tests \
+            --triple arm64-apple-ios17.0 \
+            --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -Xswiftc -disable-batch-mode
+
+      - name: Build signed IPA
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+          IPA_PATH=$(find build/ios/ipa -name '*.ipa' -type f -print -quit)
+          test -n "$IPA_PATH"
+          INFO_PATH=$(unzip -Z1 "$IPA_PATH" | grep -E '^Payload/[^/]+[.]app/Info[.]plist$' | sed -n '1p')
+          test -n "$INFO_PATH"
+          unzip -p "$IPA_PATH" "$INFO_PATH" > /tmp/CodexMeter-App-Info.plist
+          ARCHIVED_BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /tmp/CodexMeter-App-Info.plist)
+          echo "Archived App Store build number $ARCHIVED_BUILD_NUMBER"
+          test "$ARCHIVED_BUILD_NUMBER" = "$APP_BUILD_NUMBER"
+          WIDGET_INFO_PATH=$(unzip -Z1 "$IPA_PATH" | grep -E '^Payload/[^/]+[.]app/PlugIns/[^/]+[.]appex/Info[.]plist$' | sed -n '1p')
+          test -n "$WIDGET_INFO_PATH"
+          unzip -p "$IPA_PATH" "$WIDGET_INFO_PATH" > /tmp/CodexMeter-Widget-Info.plist
+          WIDGET_BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' /tmp/CodexMeter-Widget-Info.plist)
+          echo "Archived widget build number $WIDGET_BUILD_NUMBER"
+          test "$WIDGET_BUILD_NUMBER" = "$APP_BUILD_NUMBER"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false

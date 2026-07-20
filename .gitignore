@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+DerivedData/
+*.ipa
+*.xcodeproj/
+__pycache__/
+*.pyc
+xtool/
+Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png

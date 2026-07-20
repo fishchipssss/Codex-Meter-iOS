@@ -1,0 +1,11 @@
+[Unit]
+Description=Codex Meter private usage proxy
+After=network-online.target
+
+[Service]
+ExecStart=__PYTHON__ __SCRIPT__ --config __CONFIG__ serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

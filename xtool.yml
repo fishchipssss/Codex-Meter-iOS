@@ -1,0 +1,11 @@
+version: 1
+bundleID: com.picklemike.codexmeter
+product: CodexMeter
+infoPath: App-Info.plist
+entitlementsPath: App.entitlements
+iconPath: Resources/AppIcon.png
+extensions:
+  - product: CodexMeterWidget
+    bundleID: com.picklemike.codexmeter.widget
+    infoPath: Widget-Info.plist
+    entitlementsPath: Widget.entitlements
