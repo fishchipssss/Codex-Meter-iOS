@@ -1,0 +1,13 @@
+[Unit]
+Description=Codex Meter named Cloudflare Tunnel
+After=network-online.target codex-meter-proxy.service
+Wants=network-online.target
+Requires=codex-meter-proxy.service
+
+[Service]
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token-file /root/.config/secrets/codex-meter-tunnel.token
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

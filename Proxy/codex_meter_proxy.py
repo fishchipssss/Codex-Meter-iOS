@@ -342,6 +342,11 @@ def command_doctor(config: dict[str, Any]) -> None:
         codex.close()
 
 
+def command_set_public_url(path: Path, config: dict[str, Any], public_url: str) -> None:
+    config["public_url"] = public_url.rstrip("/")
+    save_config(path, config)
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("--config", default=str(DEFAULT_CONFIG))
@@ -355,6 +360,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor")
     sub.add_parser("pairing-code")
     sub.add_parser("rotate-token")
+    set_public_url = sub.add_parser("set-public-url")
+    set_public_url.add_argument("--public-url", required=True)
     return value
 
 
@@ -374,6 +381,8 @@ def main() -> int:
             print(pairing_code(config))
         elif args.command == "doctor":
             command_doctor(config)
+        elif args.command == "set-public-url":
+            command_set_public_url(path, config, args.public_url)
         elif args.command == "serve":
             server = RelayHTTPServer((config["listen_host"], int(config["listen_port"])), config)
             print(f"Codex Meter proxy listening on http://127.0.0.1:{config['listen_port']}", flush=True)
