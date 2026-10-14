@@ -19,7 +19,6 @@ struct KeychainCredentialStorage: CredentialStorage {
     func items() throws -> [String: Data] {
         var query = baseQuery
         query[kSecReturnAttributes as String] = true
-        query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -27,8 +26,18 @@ struct KeychainCredentialStorage: CredentialStorage {
         try check(status, operation: "read")
         var items: [String: Data] = [:]
         for item in result as? [[String: Any]] ?? [] {
-            if let key = item[kSecAttrAccount as String] as? String,
-               let data = item[kSecValueData as String] as? Data { items[key] = data }
+            guard let key = item[kSecAttrAccount as String] as? String else { continue }
+            // macOS does not permit returning every password's data in one query.
+            // Enumerate attributes, then read only the specific credential item.
+            var dataQuery = baseQuery
+            dataQuery[kSecAttrAccount as String] = key
+            dataQuery[kSecReturnData as String] = true
+            dataQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+            var value: CFTypeRef?
+            let dataStatus = SecItemCopyMatching(dataQuery as CFDictionary, &value)
+            if dataStatus == errSecItemNotFound { continue }
+            try check(dataStatus, operation: "read")
+            if let data = value as? Data { items[key] = data }
         }
         return items
     }
@@ -56,7 +65,9 @@ struct KeychainCredentialStorage: CredentialStorage {
     }
 
     func removeAll() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        var query = baseQuery
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        let status = SecItemDelete(query as CFDictionary)
         if status != errSecItemNotFound { try check(status, operation: "delete") }
     }
 
