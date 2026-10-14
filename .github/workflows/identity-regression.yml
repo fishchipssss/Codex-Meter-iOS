@@ -21,12 +21,14 @@ jobs:
       - name: Run synthetic authentication, storage and parser tests
         run: python3 Scripts/test_host.py
       - name: Compile the app, widget and core tests for iOS
+        if: always()
         run: |
           # Xcode supplies its own SDK version, as in the Codemagic workflow.
           sed -i '' 's/linkerSettings: liquidGlassSDKStamp/linkerSettings: []/g' Package.swift
           swift build --build-tests --triple arm64-apple-ios17.0 \
             --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -Xswiftc -disable-batch-mode
       - name: Run existing proxy tests and shell validation
+        if: always()
         run: |
           python3 -m unittest discover -s Proxy/tests -v
           bash -n Proxy/install.sh Proxy/uninstall.sh

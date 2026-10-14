@@ -24,7 +24,7 @@ struct KeychainCredentialStorage: CredentialStorage {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return [:] }
-        try check(status)
+        try check(status, operation: "read")
         var items: [String: Data] = [:]
         for item in result as? [[String: Any]] ?? [] {
             if let key = item[kSecAttrAccount as String] as? String,
@@ -44,27 +44,27 @@ struct KeychainCredentialStorage: CredentialStorage {
         // accessibility classes. iOS retains its existing device-only protection.
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            try check(SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil))
-        } else { try check(status) }
+            try check(SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil), operation: "add")
+        } else { try check(status, operation: "update") }
     }
 
     func remove(_ key: String) throws {
         var query = baseQuery
         query[kSecAttrAccount as String] = key
         let status = SecItemDelete(query as CFDictionary)
-        if status != errSecItemNotFound { try check(status) }
+        if status != errSecItemNotFound { try check(status, operation: "delete") }
     }
 
     func removeAll() throws {
         let status = SecItemDelete(baseQuery as CFDictionary)
-        if status != errSecItemNotFound { try check(status) }
+        if status != errSecItemNotFound { try check(status, operation: "delete") }
     }
 
     private var baseQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
     }
 
-    private func check(_ status: OSStatus) throws {
-        guard status == errSecSuccess else { throw MeterError.message("Could not update credentials in Keychain (\(status)).") }
+    private func check(_ status: OSStatus, operation: String) throws {
+        guard status == errSecSuccess else { throw MeterError.message("Could not \(operation) credentials in Keychain (\(status)).") }
     }
 }
