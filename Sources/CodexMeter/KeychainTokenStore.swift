@@ -36,10 +36,12 @@ struct KeychainCredentialStorage: CredentialStorage {
     func write(_ data: Data, for key: String) throws {
         var query = baseQuery
         query[kSecAttrAccount as String] = key
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]
+        var attributes: [String: Any] = [kSecValueData as String: data]
+        #if os(iOS)
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        #endif
+        // The host tests use the macOS file Keychain, which has no iOS
+        // accessibility classes. iOS retains its existing device-only protection.
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
             try check(SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil))

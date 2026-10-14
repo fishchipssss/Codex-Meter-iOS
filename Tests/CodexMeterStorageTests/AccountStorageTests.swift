@@ -25,7 +25,10 @@ final class AccountStorageTests: XCTestCase, @unchecked Sendable {
             var result: CFTypeRef?
             XCTAssertEqual(SecItemCopyMatching(query as CFDictionary, &result), errSecSuccess)
             let attributes = try XCTUnwrap(result as? [String: Any])
+            XCTAssertEqual(attributes[kSecAttrAccount as String] as? String, AccountCredentialRepository.prefix + token.localAccountId)
+            #if os(iOS)
             XCTAssertEqual(attributes[kSecAttrAccessible as String] as? String, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+            #endif
         }
         try repository.remove(localAccountId: a.localAccountId)
         XCTAssertEqual(repository.loadAll(), [b])
@@ -87,6 +90,66 @@ final class AccountStorageTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(repository.load(localAccountId: b.localAccountId)?.refreshToken, b.refreshToken + "-rotated")
     }
 
+    func testLogoutDuringRefreshCannotRestoreCredentialsCacheOrWidget() async throws {
+        let repository = AccountCredentialRepository(storage: MemoryCredentials())
+        let a = try repository.connect(tokens(expiresAt: .distantPast))
+        let b = try repository.connect(tokens("user-b"))
+        let suite = "codex-meter.synthetic-tests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = AccountCacheStore(defaults: defaults, sharedDefaults: nil)
+        let started = expectation(description: "Synthetic refresh is in flight")
+        let gate = DispatchSemaphore(value: 0)
+        let session = MockHTTP.session { request in
+            XCTAssertEqual(request.url, CodexConstants.tokenURL)
+            started.fulfill()
+            XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
+            return (200, Data("{\"access_token\":\"synthetic-late-access\",\"refresh_token\":\"synthetic-late-refresh\"}".utf8))
+        }
+        defer { gate.signal(); session.invalidateAndCancel() }
+        let api = CodexAPI(credentials: repository, auth: AuthAPI(session: session), session: session, cacheStore: cache)
+        let pending = Task { try await api.refreshAll(accountId: a.localAccountId) }
+        await fulfillment(of: [started], timeout: 5)
+        try repository.remove(localAccountId: a.localAccountId)
+        await api.removeCache(accountId: a.localAccountId)
+        gate.signal()
+        do { _ = try await pending.value; XCTFail("Logged-out credential was restored") }
+        catch {}
+        XCTAssertNil(repository.load(localAccountId: a.localAccountId))
+        XCTAssertEqual(repository.load(localAccountId: b.localAccountId), b)
+        XCTAssertNil(cache.usage(localAccountId: a.localAccountId))
+        await api.publishWidgetSnapshots([AccountUsageSnapshot(id: "direct:\(a.localAccountId)", email: a.email, usage: nil)])
+        let widgets = try JSONDecoder().decode([AccountUsageSnapshot].self, from: XCTUnwrap(defaults.data(forKey: SharedStore.accountsKey)))
+        XCTAssertTrue(widgets.isEmpty)
+    }
+
+    func testConcurrentRefreshOfSameMemberRotatesCredentialsOnce() async throws {
+        let repository = AccountCredentialRepository(storage: MemoryCredentials())
+        let a = try repository.connect(tokens(expiresAt: .distantPast))
+        let counter = RefreshCounter()
+        let suite = "codex-meter.synthetic-tests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = MockHTTP.session { request in
+            if request.url == CodexConstants.tokenURL {
+                counter.increment()
+                Thread.sleep(forTimeInterval: 0.1)
+                return (200, Data("{\"access_token\":\"synthetic-new-access\",\"refresh_token\":\"synthetic-new-refresh\"}".utf8))
+            }
+            XCTAssertEqual(request.httpMethod, "GET")
+            if request.url == CodexConstants.resetCreditsURL { return (200, Data("{\"available_count\":0,\"credits\":[]}".utf8)) }
+            return (200, usageData(20))
+        }
+        defer { session.invalidateAndCancel() }
+        let api = CodexAPI(credentials: repository, auth: AuthAPI(session: session), session: session,
+                           cacheStore: AccountCacheStore(defaults: defaults, sharedDefaults: nil))
+        async let first = api.refreshAll(accountId: a.localAccountId)
+        async let second = api.refreshAll(accountId: a.localAccountId)
+        _ = try await (first, second)
+        XCTAssertEqual(counter.value, 1)
+        XCTAssertEqual(repository.load(localAccountId: a.localAccountId)?.refreshToken, "synthetic-new-refresh")
+    }
+
     func testV1AndV2CacheMigrationCannotLeakIntoNewBusinessMember() throws {
         let suite = "codex-meter.synthetic-tests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -107,6 +170,13 @@ final class AccountStorageTests: XCTestCase, @unchecked Sendable {
         let migrated = tokens(localID: legacy.localAccountId)
         XCTAssertEqual(cache.usage(localAccountId: migrated.localAccountId), usage)
     }
+}
+
+private final class RefreshCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+    func increment() { lock.lock(); defer { lock.unlock() }; count += 1 }
 }
 
 private func usageData(_ used: Int) -> Data {

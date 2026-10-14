@@ -131,6 +131,7 @@ actor CodexAPI {
     }
 
     private func request(url: URL, method: String, tokens: AuthTokens, body: Data? = nil) async throws -> (data: Data, status: Int) {
+        try requireCurrent(tokens)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
